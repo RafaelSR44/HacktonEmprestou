@@ -19,17 +19,12 @@ Inspirado no modelo de sucesso da Magie (banco via WhatsApp), o **Emprestou** de
 ### Proposta de Valor
 
 O **Emprestou** oferece:
-- Taxas de juros negociáveis entre as partes (3-6% ao mês)
-- Taxa de 5% fixo para a Emprestou
+- Taxas de juros negociáveis entre as partes (2-6% ao mês)
 - Processo 100% via WhatsApp - sem necessidade de app adicional
 - Marketplace de empréstimos com múltiplas ofertas
 - IA para mediação de propostas e contra-propostas
 - Open Finance para análise de crédito precisa
-- Conta digital integrada para gestão de recurso
-
-### Como Funciona?
-
-O sistema de empréstimos P2P conecta credores e devedores através de um bot inteligente no WhatsApp. O devedor solicita um empréstimo, define valor, prazo e taxa máxima. O credor cria uma oferta com valor disponível, taxa desejada e critérios de risco. Os usuarios se encontram no marketplace, onde podem negociar termos com auxílio de IA. Uma vez acordado, a Emprestou disponibiliza o crédito sob a demanda do acordo feito entre o credor e o devedor, cobrando uma taxa fixa de 5% sobre o valor emprestado. O pagamento das parcelas é gerenciado automaticamente via PIX ou boleto, garantindo segurança e praticidade para ambas as partes. O Credor paga o valor a ser emprestado, a Emprestou cria o empréstimo e o valor é transferido para o Devedor.
+- Conta digital integrada para gestão de recursos
 
 ---
 
@@ -49,9 +44,63 @@ Desenvolver uma plataforma P2P de empréstimos que conecte credores e devedores 
 
 ### 3.1 Visão Geral da Arquitetura
 
-<p align="center">
-  <img src="assets/EmprestouArquitetura.png" alt="Arquitetura do Sistema Emprestou">
-</p>
+```mermaid
+graph TB
+    subgraph "Camada de Interface"
+        WA[WhatsApp Business API]
+        WEB[Dashboard Web]
+    end
+    
+    subgraph "Camada de Aplicação"
+        API[API Gateway]
+        AUTH[Serviço de Autenticação]
+        BOT[Bot Engine IA]
+    end
+    
+    subgraph "Camada de Negócio"
+        LOAN[Serviço de Empréstimos]
+        MATCH[Motor de Matching]
+        SCORE[Score de Crédito]
+        FRAUD[Anti-fraude]
+        NEGO[Negociação IA]
+    end
+    
+    subgraph "Camada de Integração"
+        OF[Open Finance]
+        PIX[Gateway PIX]
+        BOLETO[Processador Boletos]
+        NOTIF[Serviço de Notificações]
+    end
+    
+    subgraph "Camada de Dados"
+        DB[(PostgreSQL)]
+        CACHE[(Redis)]
+        QUEUE[RabbitMQ]
+    end
+    
+    WA --> API
+    WEB --> API
+    API --> AUTH
+    API --> BOT
+    BOT --> LOAN
+    BOT --> NEGO
+    LOAN --> MATCH
+    LOAN --> SCORE
+    LOAN --> FRAUD
+    MATCH --> OF
+    SCORE --> OF
+    FRAUD --> OF
+    LOAN --> PIX
+    LOAN --> BOLETO
+    API --> NOTIF
+    LOAN --> DB
+    MATCH --> DB
+    SCORE --> DB
+    FRAUD --> DB
+    API --> CACHE
+    LOAN --> QUEUE
+    NOTIF --> WA
+```
 
 **Explicação da Arquitetura:**
 
@@ -103,10 +152,6 @@ Essa arquitetura permite que cada componente escale independentemente. Por exemp
 
 ### 4.1 Diagrama Entidade-Relacionamento
 
-<p align="center">
-  <img src="assets/EmprestouERD.png" alt="Arquitetura do Sistema Emprestou">
-</p>
-
 **Explicação do Modelo de Dados:**
 
 O banco de dados foi modelado para suportar um sistema P2P complexo com múltiplos relacionamentos e fluxos transacionais. A estrutura garante integridade referencial, auditoria completa e performance otimizada.
@@ -151,6 +196,176 @@ O banco de dados foi modelado para suportar um sistema P2P complexo com múltipl
 - Constraints de validação (ex: interest_rate entre 0.5% e 15%)
 - Transações ACID para operações financeiras críticas
 
+```mermaid
+erDiagram
+    USERS ||--o{ ACCOUNTS : possui
+    USERS ||--o{ DOCUMENTS : possui
+    USERS ||--o{ CREDIT_SCORES : possui
+    USERS ||--o{ LOAN_REQUESTS : cria
+    USERS ||--o{ LOAN_OFFERS : cria
+    
+    ACCOUNTS ||--o{ TRANSACTIONS : realiza
+    ACCOUNTS ||--o{ BANK_CONNECTIONS : possui
+    
+    LOAN_REQUESTS ||--o{ LOAN_MATCHES : gera
+    LOAN_OFFERS ||--o{ LOAN_MATCHES : gera
+    LOAN_MATCHES ||--|| LOANS : confirma
+    
+    LOANS ||--o{ INSTALLMENTS : divide
+    LOANS ||--o{ NEGOTIATIONS : possui
+    
+    INSTALLMENTS ||--o{ PAYMENTS : recebe
+    
+    USERS {
+        uuid user_id PK
+        string whatsapp_id UK
+        string cpf UK
+        string full_name
+        string email
+        date birth_date
+        enum user_type "creditor|debtor|both"
+        timestamp created_at
+        timestamp updated_at
+        boolean is_active
+        boolean kyc_verified
+    }
+    
+    ACCOUNTS {
+        uuid account_id PK
+        uuid user_id FK
+        decimal balance
+        decimal blocked_balance
+        string currency
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    DOCUMENTS {
+        uuid document_id PK
+        uuid user_id FK
+        enum document_type "rg|cnh|selfie|address_proof"
+        string file_url
+        boolean verified
+        json verification_data
+        timestamp verified_at
+        timestamp created_at
+    }
+    
+    CREDIT_SCORES {
+        uuid score_id PK
+        uuid user_id FK
+        int score_value
+        json score_details
+        timestamp calculated_at
+        timestamp expires_at
+    }
+    
+    LOAN_REQUESTS {
+        uuid request_id PK
+        uuid user_id FK
+        decimal amount
+        int installments
+        decimal max_interest_rate
+        string purpose
+        enum status "open|matched|cancelled|expired"
+        json preferences
+        timestamp created_at
+        timestamp expires_at
+    }
+    
+    LOAN_OFFERS {
+        uuid offer_id PK
+        uuid user_id FK
+        decimal amount
+        int max_installments
+        decimal interest_rate
+        json requirements
+        enum status "open|matched|cancelled|expired"
+        timestamp created_at
+        timestamp expires_at
+    }
+    
+    LOAN_MATCHES {
+        uuid match_id PK
+        uuid request_id FK
+        uuid offer_id FK
+        decimal final_amount
+        int final_installments
+        decimal final_interest_rate
+        enum status "pending|accepted|rejected|negotiating"
+        timestamp created_at
+        timestamp expires_at
+    }
+    
+    LOANS {
+        uuid loan_id PK
+        uuid match_id FK
+        uuid debtor_id FK
+        uuid creditor_id FK
+        decimal principal_amount
+        decimal interest_rate
+        int installments
+        decimal total_amount
+        enum status "active|completed|defaulted|cancelled"
+        date first_due_date
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    INSTALLMENTS {
+        uuid installment_id PK
+        uuid loan_id FK
+        int installment_number
+        decimal amount
+        date due_date
+        enum status "pending|paid|overdue|cancelled"
+        timestamp paid_at
+    }
+    
+    PAYMENTS {
+        uuid payment_id PK
+        uuid installment_id FK
+        decimal amount
+        enum payment_method "pix|boleto|balance"
+        string transaction_id
+        timestamp created_at
+    }
+    
+    NEGOTIATIONS {
+        uuid negotiation_id PK
+        uuid loan_match_id FK
+        uuid proposer_id FK
+        decimal proposed_rate
+        int proposed_installments
+        string message
+        enum status "pending|accepted|rejected|countered"
+        json ai_analysis
+        timestamp created_at
+    }
+    
+    TRANSACTIONS {
+        uuid transaction_id PK
+        uuid account_id FK
+        enum transaction_type "deposit|withdrawal|transfer|loan_disbursement|installment_payment"
+        decimal amount
+        string description
+        json metadata
+        timestamp created_at
+    }
+    
+    BANK_CONNECTIONS {
+        uuid connection_id PK
+        uuid account_id FK
+        string bank_name
+        string bank_code
+        string account_number
+        boolean is_default
+        json open_finance_data
+        timestamp connected_at
+        timestamp last_sync
+    }
+```
+
 ### 4.2 Índices e Otimizações
 
 **Índices Principais:**
@@ -170,10 +385,6 @@ O banco de dados foi modelado para suportar um sistema P2P complexo com múltipl
 ## 5. FLUXOS PRINCIPAIS
 
 ### 5.1 Fluxo de Onboarding (KYC)
-
-<p align="center">
-  <img src="assets/EmprestouOnboarding.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação do Fluxo:**
 
@@ -206,12 +417,52 @@ Se qualquer etapa falhar após 3 tentativas (ex: documento ilegível, face não 
 **Segurança:**
 Todas as imagens são criptografadas antes de armazenar no S3. Dados sensíveis (CPF, documentos) são tokenizados. Logs de auditoria registram cada etapa com timestamp e IP de origem.
 
+```mermaid
+sequenceDiagram
+    participant U as Usuário
+    participant W as WhatsApp
+    participant API as API Gateway
+    participant KYC as Anti-fraude
+    participant OF as Open Finance
+    participant DB as Database
+    
+    U->>W: Envia "Quero me cadastrar"
+    W->>API: Webhook com mensagem
+    API->>DB: Verifica se usuário existe
+    DB-->>API: Usuário não existe
+    API->>W: Solicita CPF
+    U->>W: Envia CPF
+    W->>API: Webhook com CPF
+    API->>KYC: Valida CPF
+    KYC-->>API: CPF válido
+    API->>W: Solicita nome completo
+    U->>W: Envia nome
+    W->>API: Webhook com nome
+    API->>W: Solicita data de nascimento
+    U->>W: Envia data
+    W->>API: Webhook com data
+    API->>W: Solicita foto do documento
+    U->>W: Envia foto RG/CNH
+    W->>API: Webhook com imagem
+    API->>KYC: Valida documento (OCR)
+    KYC-->>API: Documento validado
+    API->>W: Solicita selfie
+    U->>W: Envia selfie
+    W->>API: Webhook com selfie
+    API->>KYC: Validação facial (liveness)
+    KYC-->>API: Face validada
+    API->>W: Solicita autorização Open Finance
+    U->>W: Autoriza
+    W->>API: Webhook confirmação
+    API->>OF: Solicita dados financeiros
+    OF-->>API: Dados recebidos
+    API->>DB: Cria usuário e calcula score
+    DB-->>API: Usuário criado
+    API->>W: "✅ Cadastro completo! Seu score: 750"
+    W->>U: Mostra mensagem
+```
 
 ### 5.2 Fluxo de Solicitação de Empréstimo (Devedor)
-
-<p align="center">
-  <img src="assets/EmprestouSolicitacaoEmprestimo.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação do Fluxo:**
 
@@ -250,11 +501,46 @@ O devedor pode sair do WhatsApp e voltar depois. O bot mantém contexto da conve
 **Inteligência na UX:**
 O bot detecta dúvidas comuns. Se o usuário perguntar "Quanto vou pagar no total?" durante o processo, calcula e exibe: valor solicitado + juros totais. Se perguntar "Quais documentos preciso?", explica que o KYC já foi feito e não precisa enviar mais nada.
 
-### 5.3 Fluxo de Oferta de Empréstimo (Credor)
+```mermaid
+sequenceDiagram
+    participant U as Devedor
+    participant W as WhatsApp
+    participant API as API Gateway
+    participant LOAN as Serviço Empréstimos
+    participant MATCH as Motor Matching
+    participant DB as Database
+    
+    U->>W: "Preciso de R$ 5000"
+    W->>API: Webhook
+    API->>LOAN: Inicia solicitação
+    LOAN->>W: "Em quantas parcelas?"
+    U->>W: "12 parcelas"
+    W->>API: Webhook
+    API->>LOAN: Registra preferência
+    LOAN->>W: "Qual taxa máxima aceita? (sugestão: 3.5%)"
+    U->>W: "4% ao mês"
+    W->>API: Webhook
+    API->>LOAN: Registra taxa máxima
+    LOAN->>W: "Para que é o empréstimo?"
+    U->>W: "Reforma da casa"
+    W->>API: Webhook
+    API->>DB: Cria LOAN_REQUEST
+    DB-->>API: Requisição criada
+    API->>MATCH: Busca ofertas compatíveis
+    MATCH->>DB: Query ofertas
+    DB-->>MATCH: Lista de 5 ofertas
+    MATCH-->>API: Ofertas ranqueadas
+    API->>W: "Encontrei 5 ofertas:\n1. 3.2% - 12x\n2. 3.5% - 10x\n3. 3.8% - 12x..."
+    W->>U: Mostra ofertas
+    U->>W: "Quero a oferta 1"
+    W->>API: Webhook
+    API->>LOAN: Cria match
+    LOAN->>DB: Cria LOAN_MATCH
+    DB-->>API: Match criado
+    API->>W: "Match criado! Aguarde confirmação do credor."
+```
 
-<p align="center">
-  <img src="assets/EmprestouOfertaEmprestimo.png" alt="Arquitetura do Sistema Emprestou">
-</p>
+### 5.3 Fluxo de Oferta de Empréstimo (Credor)
 
 **Explicação do Fluxo:**
 
@@ -293,12 +579,35 @@ O bot oferece insights como: "Sua taxa de 3.5% está acima da média do mercado 
 **Transparência de Risco:**
 Antes de criar a oferta, o sistema exibe claramente: taxa de inadimplência histórica da plataforma por faixa de score, rentabilidade líquida esperada (descontando inadimplência), comparação com outros investimentos (CDI, Tesouro Direto, CDB).
 
+```mermaid
+sequenceDiagram
+    participant U as Credor
+    participant W as WhatsApp
+    participant API as API Gateway
+    participant LOAN as Serviço Empréstimos
+    participant DB as Database
+    
+    U->>W: "Quero emprestar dinheiro"
+    W->>API: Webhook
+    API->>W: "Quanto deseja emprestar?"
+    U->>W: "R$ 10.000"
+    W->>API: Webhook
+    API->>W: "Qual taxa de juros? (mercado: 2.5-5%)"
+    U->>W: "3.5% ao mês"
+    W->>API: Webhook
+    API->>W: "Prazo máximo?"
+    U->>W: "18 meses"
+    W->>API: Webhook
+    API->>W: "Score mínimo do devedor?"
+    U->>W: "700"
+    W->>API: Webhook
+    API->>LOAN: Cria oferta
+    LOAN->>DB: Salva LOAN_OFFER
+    DB-->>API: Oferta criada
+    API->>W: "✅ Oferta publicada!\nVocê será notificado quando houver matches."
+```
 
 ### 5.4 Fluxo de Negociação com IA
-
-<p align="center">
-  <img src="assets/EmprestouNegIA.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação do Fluxo:**
 
@@ -343,13 +652,45 @@ Cada negociação alimenta o modelo de ML. Se a IA previu 78% de chance e o cred
 **Transparência:**
 Tanto credor quanto devedor podem perguntar "Por que a IA sugeriu isso?" e receber explicação: "Baseado em 1.247 negociações similares, credores com perfil parecido aceitam reduções médias de 12% quando o score do devedor é 750+".
 
+```mermaid
+sequenceDiagram
+    participant D as Devedor
+    participant C as Credor
+    participant W as WhatsApp
+    participant API as API Gateway
+    participant AI as Negociação IA
+    participant DB as Database
+    
+    Note over D,C: Match inicial: 4% - 12x
+    D->>W: "Quero contra-propor 3%"
+    W->>API: Webhook
+    API->>AI: Analisa contra-proposta
+    AI->>DB: Busca histórico e perfis
+    DB-->>AI: Dados de ambas partes
+    AI->>AI: Calcula probabilidade aceitação
+    AI-->>API: Sugestão: 3.3% tem 78% chance
+    API->>W: "Sugiro 3.3% (chance 78%). Enviar?"
+    D->>W: "Sim"
+    W->>API: Webhook
+    API->>DB: Cria NEGOTIATION
+    API->>W: Notifica credor
+    W->>C: "Nova proposta: 3.3% - 12x\nAnálise IA: Score devedor bom, proposta justa"
+    C->>W: "Aceito 3.4%"
+    W->>API: Webhook
+    API->>AI: Analisa contra-contra-proposta
+    AI-->>API: Recomenda aceitar
+    API->>W: Notifica devedor
+    W->>D: "Credor aceitou 3.4%. IA recomenda aceitar (economia R$ 200)"
+    D->>W: "Aceito"
+    W->>API: Webhook
+    API->>DB: Cria LOAN
+    DB-->>API: Empréstimo confirmado
+    API->>W: Notifica ambos
+    W->>D: "✅ Empréstimo aprovado!"
+    W->>C: "✅ Empréstimo confirmado!"
+```
 
 ### 5.5 Fluxo de Desembolso e Pagamento
-
-
-<p align="center">
-  <img src="assets/EmprestouDesEPag.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação do Fluxo:**
 
@@ -394,6 +735,41 @@ O devedor pode pagar parcelas antecipadamente ou quitar o empréstimo todo. O si
 **Segurança Transacional:**
 Todas as operações financeiras usam isolation level SERIALIZABLE no PostgreSQL. Logs imutáveis são gerados para auditoria. Qualquer falha em qualquer etapa da transação resulta em rollback completo. Reconciliação automática roda a cada hora verificando consistência entre saldos e transações.
 
+```mermaid
+sequenceDiagram
+    participant C as Credor
+    participant D as Devedor
+    participant W as WhatsApp
+    participant API as API Gateway
+    participant PIX as Gateway PIX
+    participant ACC as Accounts
+    participant DB as Database
+    
+    Note over C,D: Empréstimo aprovado
+    API->>ACC: Bloqueia saldo credor
+    ACC->>DB: Update balance
+    API->>W: "Credor: Confirme desembolso"
+    C->>W: "Confirmar"
+    W->>API: Webhook
+    API->>ACC: Transfere para conta devedor
+    ACC->>DB: Credita saldo devedor
+    API->>W: Notifica devedor
+    W->>D: "R$ 5000 disponível na conta!"
+    
+    Note over D: 30 dias depois
+    API->>W: "Lembrete: parcela R$ 517 vence amanhã"
+    D->>W: "Pagar com saldo"
+    W->>API: Webhook
+    API->>ACC: Verifica saldo
+    ACC-->>API: Saldo suficiente
+    API->>ACC: Debita devedor, credita credor
+    ACC->>DB: Update balances
+    API->>DB: Marca installment como paid
+    API->>W: Notifica ambos
+    W->>D: "✅ Parcela paga!"
+    W->>C: "✅ Recebeu R$ 517"
+```
+
 ---
 
 ## 6. SISTEMA DE SCORE DE CRÉDITO
@@ -401,10 +777,6 @@ Todas as operações financeiras usam isolation level SERIALIZABLE no PostgreSQL
 ### 6.1 Componentes do Score
 
 O score é calculado com base em múltiplas fontes de dados:
-
-<p align="center">
-  <img src="assets/EmprestouScore.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação do Sistema de Score:**
 
@@ -450,6 +822,34 @@ O score não é estático. Recalcula automaticamente a cada 30 dias ou após eve
 **Transparência ao Usuário:**
 O usuário pode perguntar "Por que meu score é X?" e recebe explicação: "Seu score é 720 (Bom). Principais fatores: ✅ Renda verificada estável, ✅ Última parcela paga em dia, ⚠️ Relação dívida/renda um pouco alta (40%)". Também oferece dicas: "Para melhorar seu score: quite dívidas existentes, mantenha pagamentos em dia, atualize dados do Open Finance".
 
+```mermaid
+graph LR
+    subgraph "Fontes de Dados"
+        OF[Open Finance]
+        HIST[Histórico Plataforma]
+        BUR[Bureaus Crédito]
+        BEH[Comportamento WhatsApp]
+    end
+    
+    subgraph "Análise ML"
+        OF --> A[Renda e Despesas]
+        OF --> B[Dívidas Existentes]
+        HIST --> C[Pagamentos Anteriores]
+        HIST --> D[Taxa Inadimplência]
+        BUR --> E[Score Externo]
+        BEH --> F[Padrões Uso]
+    end
+    
+    subgraph "Score Final"
+        A --> CALC[Modelo ML]
+        B --> CALC
+        C --> CALC
+        D --> CALC
+        E --> CALC
+        F --> CALC
+        CALC --> SCORE[Score 300-900]
+    end
+```
 
 ### 6.2 Faixas de Score
 
@@ -481,10 +881,6 @@ O usuário pode perguntar "Por que meu score é X?" e recebe explicação: "Seu 
 ## 7. SISTEMA ANTI-FRAUDE
 
 ### 7.1 Camadas de Segurança
-
-<p align="center">
-  <img src="assets/EmprestouScore.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação do Sistema Multi-Camadas Anti-Fraude:**
 
@@ -566,6 +962,31 @@ Cada fraude detectada (mesmo tardiamente) alimenta o sistema. Se um fraudador pa
 
 Sistema busca equilibrar: muita fricção → usuários legítimos desistem, pouca fricção → fraudadores passam facilmente. Métricas monitoradas: taxa de aprovação de usuários legítimos (meta: >90%), taxa de detecção de fraude (meta: >95%), tempo médio de onboarding (meta: <5min para usuários legítimos).
 
+```mermaid
+graph TD
+    START[Início Transação] --> L1{Camada 1: Documentos}
+    L1 -->|Válido| L2{Camada 2: Biometria}
+    L1 -->|Inválido| BLOCK1[Bloqueio]
+    
+    L2 -->|Válido| L3{Camada 3: Comportamento}
+    L2 -->|Inválido| BLOCK2[Bloqueio]
+    
+    L3 -->|Normal| L4{Camada 4: Dispositivo}
+    L3 -->|Suspeito| REVIEW1[Revisão Manual]
+    
+    L4 -->|Confiável| L5{Camada 5: Velocidade}
+    L4 -->|Suspeito| REVIEW2[Revisão Manual]
+    
+    L5 -->|OK| APPROVE[Aprovado]
+    L5 -->|Alto Risco| REVIEW3[Revisão Manual]
+    
+    REVIEW1 --> DECISION{Analista}
+    REVIEW2 --> DECISION
+    REVIEW3 --> DECISION
+    DECISION -->|Aprovado| APPROVE
+    DECISION -->|Negado| BLOCK3[Bloqueio]
+```
+
 ### 7.2 Validações Implementadas
 
 1. **Validação de Documentos**
@@ -608,10 +1029,6 @@ Sistema busca equilibrar: muita fricção → usuários legítimos desistem, pou
 - Dívidas existentes
 
 **Fluxo de Integração**:
-
-<p align="center">
-  <img src="assets/EmprestouFluxoIntegracao.png" alt="Arquitetura do Sistema Emprestou">
-</p>
 
 **Explicação da Integração Open Finance:**
 
@@ -662,6 +1079,30 @@ Toda comunicação via HTTPS/TLS 1.3. Tokens armazenados criptografados (AES-256
 **Tratamento de Erros:**
 Se banco está fora do ar, tenta 3 vezes com backoff exponencial. Se falhar, notifica usuário e agenda retry automático. Se dados estão incompletos (ex: banco não fornece certos campos), usa apenas o disponível e ajusta confiança do score. Se múltiplos bancos estão conectados, prioriza o que tem dados mais completos e recentes.
 
+```mermaid
+sequenceDiagram
+    participant U as Usuário
+    participant E as Emprestou
+    participant OF as Open Finance
+    participant BANK as Banco
+    
+    U->>E: Autoriza Open Finance
+    E->>OF: Solicita auth_url
+    OF-->>E: Retorna URL
+    E->>U: Abre URL banco
+    U->>BANK: Faz login
+    BANK->>U: Solicita aprovação
+    U->>BANK: Aprova compartilhamento
+    BANK->>OF: Envia auth_code
+    OF->>E: Webhook com código
+    E->>OF: Troca code por access_token
+    OF-->>E: Retorna token
+    E->>OF: Consulta dados (com token)
+    OF->>BANK: Busca dados
+    BANK-->>OF: Retorna dados
+    OF-->>E: Dados financeiros
+    E->>E: Processa e calcula score
+```
 
 ### 8.2 Gateway PIX
 
@@ -836,9 +1277,49 @@ Uso de botões nativos do WhatsApp para melhor UX:
 
 ---
 
-## 12. DIFERENCIAIS COMPETITIVOS
+## 12. ROADMAP DE DESENVOLVIMENTO
 
-### 12.1 vs. Bancos Tradicionais
+### 12.1 Fase 1: MVP (Sprint Hackathon - 30h)
+
+**Entregáveis**:
+- ✅ Bot WhatsApp funcional
+- ✅ Cadastro com KYC básico (documento + selfie)
+- ✅ Solicitação de empréstimo
+- ✅ Oferta de empréstimo
+- ✅ Matching manual
+- ✅ Score mockado
+- ✅ Dashboard administrativo básico
+
+**Stack Técnico**:
+- Backend: Python + Flask
+- Frontend: React + Tailwind
+- Database: PostgreSQL
+- WhatsApp: Twilio API
+- Deploy: Heroku / Railway
+
+### 12.2 Fase 2: Beta (Pós-Hackathon - 2 meses)
+
+- 🔄 Integração Open Finance
+- 🔄 Score de crédito com ML
+- 🔄 Gateway PIX real
+- 🔄 Negociação com IA
+- 🔄 Sistema de parcelas automatizado
+- 🔄 App mobile complementar
+
+### 12.3 Fase 3: Produção (3-6 meses)
+
+- 📋 Marketplace público de empréstimos
+- 📋 Seguro de inadimplência
+- 📋 Pagamento de boletos
+- 📋 Investimento automático (robo-advisor)
+- 📋 Programa de fidelidade
+- 📋 API para parceiros
+
+---
+
+## 13. DIFERENCIAIS COMPETITIVOS
+
+### 13.1 vs. Bancos Tradicionais
 
 | Aspecto | Bancos | Emprestou |
 |---------|--------|-----------|
@@ -848,7 +1329,7 @@ Uso de botões nativos do WhatsApp para melhor UX:
 | Burocracia | Alta | Mínima |
 | Transparência | Baixa | Total |
 
-### 12.2 vs. Fintechs de Crédito
+### 13.2 vs. Fintechs de Crédito
 
 | Aspecto | Nubank/C6 | Emprestou |
 |---------|-----------|-----------|
@@ -857,7 +1338,7 @@ Uso de botões nativos do WhatsApp para melhor UX:
 | Rentabilidade Investidor | Fixa (~110% CDI) | Negociável (150-300% CDI) |
 | Interface | App próprio | WhatsApp |
 
-### 12.3 vs. Plataformas P2P Existentes
+### 13.3 vs. Plataformas P2P Existentes
 
 | Aspecto | Nexoos/Trustly | Emprestou |
 |---------|----------------|-----------|
@@ -869,16 +1350,16 @@ Uso de botões nativos do WhatsApp para melhor UX:
 
 ---
 
-## 13. MÉTRICAS DE SUCESSO
+## 14. MÉTRICAS DE SUCESSO
 
-### 13.1 KPIs Técnicos
+### 14.1 KPIs Técnicos
 
 - **Uptime**: ≥ 99.9%
 - **Latência média**: < 1s (resposta WhatsApp)
 - **Taxa de erro**: < 0.1%
 - **Throughput**: > 500 TPS
 
-### 13.2 KPIs de Produto
+### 14.2 KPIs de Produto
 
 - **Taxa de conversão cadastro**: > 60%
 - **Taxa de conclusão KYC**: > 80%
@@ -886,7 +1367,7 @@ Uso de botões nativos do WhatsApp para melhor UX:
 - **Taxa de inadimplência**: < 3%
 - **NPS**: > 70
 
-### 13.3 KPIs de Negócio
+### 14.3 KPIs de Negócio
 
 - **CAC** (Custo de Aquisição): < R$ 50
 - **LTV** (Lifetime Value): > R$ 500
@@ -896,9 +1377,9 @@ Uso de botões nativos do WhatsApp para melhor UX:
 
 ---
 
-## 14. TECNOLOGIAS QUE VAMOS UTILIZAR
+## 15. TECNOLOGIAS UTILIZADAS
 
-### 14.1 Backend
+### 15.1 Backend
 
 ```yaml
 Linguagem: Python 3.11
@@ -909,7 +1390,7 @@ Task Queue: Celery + RabbitMQ
 Cache: Redis 7.0
 ```
 
-### 14.2 Frontend
+### 15.2 Frontend
 
 ```yaml
 Framework: React 18
@@ -920,7 +1401,7 @@ Charts: Recharts
 Icons: Lucide React
 ```
 
-### 14.3 Banco de Dados
+### 15.3 Banco de Dados
 
 ```yaml
 Primary: PostgreSQL 15
@@ -930,7 +1411,7 @@ Extensions:
   - pg_stat_statements (performance)
 ```
 
-### 14.4 Infraestrutura
+### 15.4 Infraestrutura
 
 ```yaml
 Cloud: AWS
@@ -942,7 +1423,7 @@ CDN: CloudFront
 Monitoring: CloudWatch + Grafana
 ```
 
-### 14.5 Integrações
+### 15.5 Integrações
 
 ```yaml
 WhatsApp: Twilio WhatsApp Business API
@@ -952,9 +1433,11 @@ Anti-fraude: Onfido + AWS Rekognition
 ML: AWS SageMaker
 ```
 
-## 15. JUSTIFICATIVA DAS ESCOLHAS TECNOLÓGICAS
+---
 
-### 15.1 Backend: Python + Flask
+## 16. JUSTIFICATIVA DAS ESCOLHAS TECNOLÓGICAS
+
+### 16.1 Backend: Python + Flask
 
 **Por que Python?**
 
@@ -1002,7 +1485,7 @@ Flask existe há 14+ anos com comunidade massiva. Qualquer problema que encontra
 
 - **Node.js (Express)**: JavaScript no backend seria coerente com frontend React, mas ecosistema de ML é fraco. Bibliotecas como TensorFlow.js são limitadas comparadas ao Python. Tipagem com TypeScript adiciona complexidade. Callback hell e event loop podem complicar código síncrono de transações financeiras.
 
-### 15.2 Frontend: React + Tailwind CSS
+### 16.2 Frontend: React + Tailwind CSS
 
 **Por que React?**
 
@@ -1050,7 +1533,7 @@ Apesar de utility-first, Tailwind é altamente customizável via `tailwind.confi
 
 - **Styled-components**: CSS-in-JS é poderoso para componentes isolados, mas adiciona runtime overhead. Tailwind é zero-runtime (CSS é extraído em build time). Styled-components também dificulta reuso de estilos entre componentes sem criar abstrações complexas.
 
-### 15.3 Banco de Dados: PostgreSQL
+### 16.3 Banco de Dados: PostgreSQL
 
 PostgreSQL foi escolhido como banco principal por ser a escolha óbvia para sistemas financeiros:
 
@@ -1083,7 +1566,7 @@ SQLAlchemy (ORM Python padrão de facto) tem suporte excelente para PostgreSQL, 
 
 - **SQLite**: Excelente para desenvolvimento local e testes, mas inadequado para produção com múltiplos escritores. Locking de tabela inteira (não row-level) causa contenção. Não suporta particionamento, replicação, ou clustering. Não escalaria além de alguns usuários simultâneos.
 
-### 15.4 Cache e Filas: Redis + RabbitMQ
+### 16.4 Cache e Filas: Redis + RabbitMQ
 
 **Redis para Cache e Sessões**
 
@@ -1135,7 +1618,7 @@ Chamar é assíncrono: `calculate_credit_score.delay(user_id)` envia para fila i
 
 - **AWS SQS**: Managed queue da AWS seria opção válida (zero manutenção), mas temos lock-in vendor e latências maiores (requisições HTTP para AWS). RabbitMQ local tem latências sub-milisegundo.
 
-### 15.5 Infraestrutura: AWS
+### 16.5 Infraestrutura: AWS
 
 AWS foi escolhida como cloud provider pelos seguintes motivos:
 
@@ -1218,7 +1701,7 @@ Em hackathon/startup, foco deve ser em produto, não infraestrutura. RDS gerenci
 
 - **Digital Ocean**: Mais barato que AWS para infraestrutura básica (Droplets, Managed Databases). Limitação: falta serviços especializados (Rekognition, SageMaker). Teríamos que integrar providers diferentes (ex: Onfido para KYC), aumentando complexidade.
 
-### 15.6 Integrações de Terceiros
+### 16.6 Integrações de Terceiros
 
 **Twilio WhatsApp Business API**
 
@@ -1297,7 +1780,7 @@ Combinação de dois serviços para KYC robusto:
 
 Usar ambos em paralelo aumenta accuracy e reduz falsos negativos/positivos.
 
-### 15.7 Considerações de Escalabilidade
+### 16.7 Considerações de Escalabilidade
 
 A stack escolhida suporta crescimento de 100 usuários para 100.000 usuários sem reescrita:
 
@@ -1392,70 +1875,82 @@ emprestou/
 ├── .env.example
 └── README.md
 ```
----
-
-## 18. Próximos Passos
-
-### 18.1 Fase 1: MVP
-
-- Bot WhatsApp funcional
-- Cadastro com KYC básico (documento + selfie)
-- Solicitação de empréstimo
-- Oferta de empréstimo
-- Matching manual
-- Score mockado
-- Dashboard administrativo básico
-
-### 18.2 Fase 2: Beta
-
-- Integração Open Finance
-- Score de crédito com ML
-- Gateway PIX real
-- Negociação com IA
-- Sistema de parcelas automatizado
-- App mobile complementar
-
-### 18.3 Fase 3: Produção
-
-- Marketplace público de empréstimos
-- Seguro de inadimplência
-- Pagamento de boletos
-- Investimento automático (robo-advisor)
-- Programa de fidelidade
-- API para parceiros
 
 ---
 
+## 17. PRÓXIMOS PASSOS (PÓS-PRÉ-PROJETO)
+
+1. **Validação com Mentores QI** (26 e 29/09)
+   - Revisão da arquitetura
+   - Validação do modelo de negócio
+   - Ajustes no escopo
+
+2. **Preparação para Sprint** (30/09 - 03/10)
+   - Setup do ambiente de desenvolvimento
+   - Criação dos repositórios
+   - Definição de tasks no backlog
+
+3. **Imersão no Escritório QI** (04-05/10)
+   - Desenvolvimento intensivo 30h
+   - Mentoria com devs QI
+   - Testes e ajustes
+   - Preparação da apresentação
+
+4. **Apresentação Final** (05/10 - 14h)
+   - Demo ao vivo
+   - Explicação técnica
+   - Defesa do modelo de negócio
+
+---
+
+## 18. EQUIPE E RESPONSABILIDADES
+
+### Time Proposto (Trio)
+
+**Desenvolvedor Full-Stack** (Você)
+- Arquitetura geral
+- Backend (API + Integrações)
+- Coordenação técnica
+
+**Desenvolvedor Frontend**
+- Dashboard administrativo
+- Componentes React
+- UX/UI
+
+**Data Scientist / ML Engineer**
+- Modelo de score de crédito
+- Sistema anti-fraude
+- IA de negociação
+
+### Divisão de Trabalho (Sprint 30h)
+
+| Período | Dev Full-Stack | Dev Frontend | Data Scientist |
+|---------|----------------|--------------|----------------|
+| Sáb 8-12h | Setup + API Base | Setup + Layout | Setup ML Pipeline |
+| Sáb 13-18h | WhatsApp Bot | Dashboard | Score Model |
+| Sáb 19-22h | Matching Service | Telas Loans | Fraud Detection |
+| Dom 8-12h | Integrações | Telas Users | IA Negociação |
+| Dom 13-14h | Testes + Deploy | Ajustes UI | Testes ML |
+
+---
 
 ## CONTATO E APRESENTAÇÃO
 
 **Nome do Projeto**: Emprestou
 **Tagline**: "Crédito justo, direto no seu WhatsApp"
 **Categoria**: P2P Lending + FinTech + Conversational AI
-**Participantes**:
-
-- #### **Nome**: Rafael Santana Rodrigues
-- **Email**: santanarodriguesrafael43@gmail.com
-- **LinkedIn**: https://www.linkedin.com/in/rafael-santana-rodrigues/
-- **GitHub**: https://github.com/RafaelSR44
-
-- #### **Nome**: Diego Figueiredo Silva
-- **Email**: dfigueiredosilva93@gmail.com
-- **LinkedIn**: https://www.linkedin.com/in/diegofigueiredos/
-- **GitHub**: https://github.com/diegofsiilva
-
-- #### **Nome**: Cauê Meyer Taddeo
-- **Email**: cauetaddeo@gmail.com
-- **LinkedIn**: https://www.linkedin.com/in/cauetaddeo/
-- **GitHub**: https://github.com/cauetaddeo
 
 **Diferenciais para a Banca**:
-1. Inovação: IA para negociação de taxas
-2. Canal único: 100% via WhatsApp
-3. Open Finance para score preciso
-4. Modelo de negócio escalável e rentável
-5. Segurança em múltiplas camadas
-6. Tecnologia moderna
+1. ✅ Cumpre TODOS os requisitos (Anti-fraude, Score, P2P)
+2. 🚀 Inovação: IA para negociação de taxas
+3. 💬 Canal único: 100% via WhatsApp
+4. 🏦 Open Finance para score preciso
+5. 💰 Modelo de negócio escalável e rentável
+6. 🔒 Segurança em múltiplas camadas
+7. 📊 Tecnologia justificada e moderna
 
 ---
 
+**Documentação criada para o Hackathon QI 2024**
+**Última atualização**: Setembro 2024
+**Versão**: 1.0
