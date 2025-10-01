@@ -5,7 +5,9 @@
   <img src="assets/EmprestouLogo.jpg" alt="Logo do Sistema Emprestou" width="300">
 </p>
 
-Link para o Figma com protótipos: [Figma Emprestou](https://www.figma.com/file/Exemplo/Emprestou?node-id=0%3A1)
+Link para o Figma com protótipos: [Figma Emprestou](https://www.figma.com/design/80LQbZl29kdNv6kFOZNaiO/winner-hacka?node-id=0-1&p=f&t=vfkdK4XWvWGtVGXN-0)
+
+Link do video de apresentação: [YouTube Emprestou](https://youtube.com/shorts/idfnnoWbasI?feature=share)
 
 ## 1. CONTEXTO
 
