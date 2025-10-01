@@ -1,5 +1,5 @@
 # Projeto Emprestou - Plataforma P2P de Empréstimos via WhatsApp
-## Hackathon QI 2024
+## Hackathon QI 2025
 
 ---
 
@@ -355,44 +355,50 @@ Tanto credor quanto devedor podem perguntar "Por que a IA sugeriu isso?" e receb
 
 Este fluxo garante a movimentação segura do dinheiro: do credor para o devedor (desembolso) e do devedor de volta ao credor (pagamentos das parcelas).
 
-**Fase 1 - Bloqueio Preventivo:**
-Assim que o empréstimo é aprovado (ambas as partes aceitaram os termos), o sistema imediatamente executa um bloqueio no saldo do credor. O valor sai do campo `balance` e entra em `blocked_balance`. Isso garante que o credor não possa gastar ou emprestar novamente o mesmo dinheiro enquanto o desembolso não for confirmado. A operação é atômica (transação SQL) para evitar race conditions.
+**Fase 1 - Geração do Contrato Digital:**
+Quando ambas as partes aceitam os termos finais do empréstimo, o sistema gera automaticamente um contrato digital com força legal contendo: identificação completa das partes (CPF, nome, endereço), valor principal, taxa de juros pactuada, número de parcelas, datas de vencimento, multa por atraso, cláusulas de quitação antecipada, foro para resolução de disputas. O contrato é assinado digitalmente por ambas as partes via plataforma (assinatura eletrônica válida conforme MP 2.200-2/2001).
 
-**Fase 2 - Confirmação do Desembolso:**
-Mesmo com o empréstimo aprovado, existe uma janela de confirmação final. O credor recebe notificação: "Empréstimo aprovado! Confirme o desembolso de R$ 5.000 para [nome do devedor]". Isso dá oportunidade de desistir de última hora (por exemplo, se perceber algo suspeito no perfil). O credor tem 24h para confirmar; após isso, desembolsa automaticamente.
+**Fase 2 - Compartilhamento de Dados Bancários:**
+Após assinatura do contrato, o sistema compartilha de forma segura os dados bancários do devedor com o credor: nome completo, CPF, chave PIX (pode ser CPF, e-mail ou celular), banco, agência e conta (se aplicável). O devedor autoriza expressamente esse compartilhamento no momento do cadastro (termo de aceite LGPD). O sistema também gera um código único de identificação do empréstimo que deve ser incluído na descrição da transferência para rastreamento.
 
-**Fase 3 - Transferência do Valor:**
-Ao confirmar, o sistema executa uma transação complexa: debita `blocked_balance` do credor (R$ 5.000), credita `balance` do devedor (R$ 5.000), cria registro em TRANSACTIONS de ambos os lados (tipo "loan_disbursement"), gera INSTALLMENTS (12 parcelas de R$ 517 cada), calcula datas de vencimento (primeira parcela 30 dias após desembolso).
+**Fase 3 - Instrução de Transferência Direta:**
+O credor recebe instruções claras via WhatsApp: "Para concluir o empréstimo, transfira R$ 5.000 para: Nome: João Silva, CPF: 123.456.789-00, Chave PIX: joao@email.com, Descrição obrigatória: EMP12345. ATENÇÃO: Transfira do seu banco pessoal DIRETAMENTE para a conta do devedor. A Emprestou NÃO recebe ou intermedia valores." O credor tem 48h para realizar a transferência.
 
-**Fase 4 - Notificação de Disponibilidade:**
-O devedor recebe notificação push: "R$ 5.000 disponível na sua conta Emprestou! Você pode transferir para seu banco ou usar direto na plataforma". O saldo aparece instantaneamente na conta virtual dele. Pode sacar via PIX (cobrada taxa de R$ 2) ou deixar para pagar boletos/fazer transferências.
+**Fase 4 - Comprovação do Desembolso:**
+Após realizar a transferência, o credor deve enviar o comprovante via WhatsApp (print ou PDF). O sistema valida: valor corresponde ao empréstimo, nome do favorecido é o devedor, descrição contém código de rastreamento, data da transferência está dentro do prazo. Alternativamente, o sistema pode integrar com Open Finance para verificar automaticamente a transferência saindo da conta do credor e chegando na conta do devedor (sem intermediação).
 
-**Fase 5 - Lembretes Automáticos:**
-O sistema monitora continuamente as datas de vencimento das parcelas. 7 dias antes do vencimento, envia primeiro lembrete: "Sua parcela de R$ 517 vence em 7 dias". 1 dia antes, envia lembrete urgente: "Lembre-se: parcela vence amanhã. Saldo disponível: R$ XXX". No dia do vencimento, envia notificação final: "Parcela vence hoje! Pague agora para evitar juros de mora".
+**Fase 5 - Confirmação e Ativação:**
+Uma vez validado o comprovante, o sistema: registra o empréstimo como "ativo" no banco de dados, gera todas as parcelas com datas de vencimento, envia notificação ao devedor: "Empréstimo confirmado! Você recebeu R$ 5.000 de [nome do credor]. Primeira parcela de R$ 517 vence em [data]", envia ao credor: "Desembolso confirmado! Você emprestou R$ 5.000 para [nome do devedor]. Você receberá 12 parcelas de R$ 517 a partir de [data]".
 
-**Fase 6 - Iniciação do Pagamento:**
-O devedor responde "Pagar com saldo". O bot confirma: "Pagar parcela de R$ 517 com saldo da conta? Digite SIM para confirmar". Isso evita pagamentos acidentais. Após confirmação, executa a operação.
+**Fase 6 - Lembretes de Vencimento:**
+O sistema monitora as datas de vencimento e envia lembretes automáticos: 7 dias antes: "Sua parcela de R$ 517 vence em 7 dias. Lembre-se de transferir para a conta do credor", 1 dia antes: "Lembrete urgente: parcela vence amanhã!", No dia: "Parcela vence HOJE! Dados para pagamento: [dados bancários do credor]", Inclui sempre os dados bancários do credor (chave PIX, banco, agência, conta) e código de rastreamento da parcela.
 
-**Fase 7 - Validações de Pagamento:**
-O sistema verifica múltiplas condições antes de processar: saldo disponível ≥ valor da parcela, parcela ainda não está marcada como paga, não há bloqueio na conta por fraude. Se qualquer validação falhar, informa o motivo e oferece alternativas (pagar via PIX, boleto, fazer depósito).
+**Fase 7 - Pagamento Direto da Parcela:**
+O devedor realiza transferência DIRETA do seu banco pessoal para a conta do credor via: PIX (recomendado - instantâneo e rastreável), TED/DOC (1-2 dias úteis), Transferência entre contas do mesmo banco (se aplicável). IMPORTANTE: Devedor NUNCA transfere para a Emprestou. Toda parcela vai direto do devedor para o credor. Na descrição da transferência, deve incluir o código da parcela (ex: "EMP12345-01" para parcela 1).
 
-**Fase 8 - Processamento do Pagamento:**
-Se validações OK, executa outra transação atômica: debita `balance` do devedor (R$ 517), credita `balance` do credor (R$ 517), cria PAYMENT vinculado à INSTALLMENT, atualiza status da parcela para "paid", registra timestamp exato do pagamento. Toda operação em uma única transaction SQL.
+**Fase 8 - Registro de Pagamento:**
+Após realizar o pagamento, o devedor pode: enviar comprovante via WhatsApp para registro na plataforma, ou aguardar o credor confirmar o recebimento, ou sistema detecta automaticamente via Open Finance. O sistema então: marca parcela como "paga", registra data e hora do pagamento, atualiza saldo devedor, notifica ambas as partes: "Parcela 1/12 confirmada! Próxima parcela vence em [data]".
 
-**Fase 9 - Notificações Bilaterais:**
-Ambas as partes são notificadas instantaneamente. Devedor recebe: "Parcela paga com sucesso! Próximo vencimento: [data]. Saldo restante: R$ XXX". Credor recebe: "Você recebeu R$ 517 de [nome do devedor]. Parcela 1/12 do empréstimo #12345. Saldo disponível: R$ YYY".
+**Fase 9 - Confirmação pelo Credor:**
+O credor pode acessar o dashboard e confirmar manualmente o recebimento de cada parcela (se o devedor não enviou comprovante). Isso garante dupla checagem e evita disputas. Se credor não confirmar em 3 dias úteis após vencimento, sistema envia alerta: "Você recebeu a parcela de [nome do devedor]? Confirme na plataforma."
 
 **Fase 10 - Tratamento de Inadimplência:**
-Se a parcela não for paga até a data de vencimento, o status muda automaticamente para "overdue". Inicia-se um fluxo de cobrança: D+1: notificação amigável "Percebemos que sua parcela venceu ontem...", D+3: alerta mais firme + aplicação de juros de mora (2% sobre o valor), D+7: último aviso antes de marcar como inadimplente, D+15: marca como inadimplente, informa bureaus de crédito, suspende conta.
+Se parcela não for confirmada até a data de vencimento + 3 dias de tolerância: sistema marca como "atrasada", envia notificação ao devedor: "Parcela em atraso! Transfira R$ 527 (valor + multa 2%) para [dados do credor]", notifica credor sobre o atraso, aplica multa contratual (2%) + juros de mora (0,33% ao dia), registra negativação se atraso > 15 dias (conforme previsto em contrato), oferece ao credor opções de cobrança (negociação assistida pela plataforma, envio do contrato para protesto, acionamento judicial via parceiros).
 
-**Alternativas de Pagamento:**
-O devedor pode escolher pagar via: saldo da conta Emprestou (instantâneo), PIX para a conta Emprestou (confirma em 10 segundos), boleto gerado (confirma em 1-2 dias úteis), débito automático (configura uma vez, paga todo mês automaticamente).
+**Fase 11 - Quitação Antecipada:**
+Se devedor quiser quitar antes do prazo: solicita pelo WhatsApp ou dashboard, sistema calcula saldo devedor com desconto de juros futuros (apenas juros do período efetivo), informa valor exato e dados bancários do credor, devedor transfere DIRETAMENTE para credor, envia comprovante, sistema marca empréstimo como "quitado" e emite declaração de quitação digital.
 
-**Pagamento Antecipado:**
-O devedor pode pagar parcelas antecipadamente ou quitar o empréstimo todo. O sistema recalcula os juros proporcionalmente (juros simples sobre período efetivo). Exemplo: quitação após 3 meses de um empréstimo de 12 meses resulta em economia significativa de juros.
+**Rastreabilidade e Auditoria:**
+Todos os comprovantes são armazenados criptografados no S3, logs imutáveis registram cada transferência (mesmo sendo externas), sistema mantém hash SHA-256 de cada comprovante para prova de autenticidade, contratos assinados têm validade jurídica e podem ser usados em processos, Open Finance permite auditoria independente das movimentações (quando integrado).
 
-**Segurança Transacional:**
-Todas as operações financeiras usam isolation level SERIALIZABLE no PostgreSQL. Logs imutáveis são gerados para auditoria. Qualquer falha em qualquer etapa da transação resulta em rollback completo. Reconciliação automática roda a cada hora verificando consistência entre saldos e transações.
+**Compliance Regulatório:**
+Este modelo está em conformidade com regulação brasileira porque: Emprestou NÃO é instituição de pagamento (não custodia ou movimenta fundos), empréstimos P2P entre pessoas físicas são legais no Brasil, contratos têm força legal (Código Civil arts. 586-592), sistema apenas facilita matching e gestão documental, receita vem de taxa de serviço sobre a operação (cobrada separadamente), não há caracterização de intermediação financeira não autorizada.
+
+**Modelo de Receita (Sem Intermediação):**
+A Emprestou cobra taxa de serviço de 1,5% sobre o valor do empréstimo: 1% pago pelo devedor (cobrado via boleto/PIX para conta da Emprestou), 0,5% pago pelo credor (cobrado via boleto/PIX para conta da Emprestou). Exemplo: empréstimo de R$ 10.000 → devedor paga R$ 100 de taxa + credor paga R$ 50 = R$ 150 de receita para Emprestou. Essas taxas são cobradas NO MOMENTO da formalização do contrato, ANTES do desembolso, e são transferidas para conta bancária da Emprestou (empresa), não passando pelas contas pessoais de credores/devedores.
+
+**Segurança Jurídica:**
+Contratos com cláusulas de foro, penalidades e condições claras, sistema de assinaturas digitais com certificado ICP-Brasil (opcional) ou assinatura eletrônica simples (padrão), registros imutáveis em blockchain (futuro) para prova irrefutável, parceria com escritórios de advocacia para cobrança judicial quando necessário, seguro de inadimplência opcional (provido por seguradora terceira, não pela Emprestou).
 
 ---
 
