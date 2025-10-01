@@ -1,7 +1,11 @@
 # Projeto Emprestou - Plataforma P2P de Empréstimos via WhatsApp
 ## Hackathon QI 2025
 
----
+<p align="center">
+  <img src="assets/EmprestouLogo.jpg" alt="Logo do Sistema Emprestou" width="300">
+</p>
+
+Link para o Figma com protótipos: [Figma Emprestou](https://www.figma.com/file/Exemplo/Emprestou?node-id=0%3A1)
 
 ## 1. CONTEXTO
 
